@@ -1,0 +1,50 @@
+# ─── OS ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ─── Node / frontend (client) ───────────────────────────
+client/node_modules/
+client/dist/
+client/.env
+client/.env.local
+client/.env.*.local
+client/npm-debug.log*
+client/yarn-debug.log*
+client/yarn-error.log*
+client/pnpm-debug.log*
+client/.vite/
+
+# ─── .NET / backend ─────────────────────────────────────
+server/**/bin/
+server/**/obj/
+server/**/out/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+*.cache
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Visual Studio / Rider
+.vs/
+*.rsuser
+.idea/
+*.DotSettings.user
+
+# User secrets (не коммитить строки подключения и ключи)
+**/appsettings.*.local.json
+secrets.json
+
+# EF / tooling
+*.db
+*.db-shm
+*.db-wal
+
+# ─── Прочее ───────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+~$*
