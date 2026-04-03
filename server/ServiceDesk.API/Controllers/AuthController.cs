@@ -1,8 +1,7 @@
-using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using ServiceDesk.API.Models;
+using ServiceDesk.API.DTOs.Auth;
 using ServiceDesk.API.Services;
 
 namespace ServiceDesk.API.Controllers;
@@ -12,134 +11,47 @@ namespace ServiceDesk.API.Controllers;
 [Produces("application/json")]
 public class AuthController : ControllerBase
 {
-    private readonly UserManager<ApplicationUser> _users;
-    private readonly RoleManager<IdentityRole> _roles;
-    private readonly SignInManager<ApplicationUser> _signIn;
-    private readonly JwtService _jwt;
+    private readonly IAuthService _authService;
 
-    public AuthController(
-        UserManager<ApplicationUser> users,
-        RoleManager<IdentityRole> roles,
-        SignInManager<ApplicationUser> signIn,
-        JwtService jwt)
+    public AuthController(IAuthService authService)
     {
-        _users  = users;
-        _roles  = roles;
-        _signIn = signIn;
-        _jwt    = jwt;
+        _authService = authService;
     }
 
+    /// <summary>Register a new user and receive a JWT access token.</summary>
     [HttpPost("register")]
-    [ProducesResponseType(typeof(TokenResponse), 200)]
-    [ProducesResponseType(typeof(ProblemDetails), 400)]
-    public async Task<IActionResult> Register([FromBody] RegisterRequest req)
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest request)
     {
-        if (!ModelState.IsValid)
-            return ValidationProblem(ModelState);
-
-        var user = new ApplicationUser
-        {
-            UserName       = req.Email,
-            Email          = req.Email,
-            DisplayName    = req.DisplayName,
-            PhoneNumber    = req.Phone,
-            EmailConfirmed = true,
-        };
-
-        var result = await _users.CreateAsync(user, req.Password);
-        if (!result.Succeeded)
-        {
-            foreach (var err in result.Errors)
-                ModelState.AddModelError(err.Code, err.Description);
-            return ValidationProblem(ModelState);
-        }
-
-        if (!await _roles.RoleExistsAsync("client"))
-            await _roles.CreateAsync(new IdentityRole("client"));
-
-        await _users.AddToRoleAsync(user, "client");
-
-        var token = _jwt.GenerateToken(user, "client");
-        return Ok(new TokenResponse(token));
+        var response = await _authService.RegisterAsync(request);
+        return Ok(response);
     }
 
+    /// <summary>Authenticate with email and password and receive a JWT access token.</summary>
     [HttpPost("login")]
-    [ProducesResponseType(typeof(TokenResponse), 200)]
-    [ProducesResponseType(typeof(ProblemDetails), 400)]
-    [ProducesResponseType(typeof(ProblemDetails), 401)]
-    public async Task<IActionResult> Login([FromBody] LoginRequest req)
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest request)
     {
-        if (!ModelState.IsValid)
-            return ValidationProblem(ModelState);
-
-        var user = await _users.FindByEmailAsync(req.Email);
-        if (user is null)
-            return Unauthorized(ProblemOf(401, "Неверный логин или пароль"));
-
-        var check = await _signIn.CheckPasswordSignInAsync(user, req.Password, lockoutOnFailure: false);
-        if (!check.Succeeded)
-            return Unauthorized(ProblemOf(401, "Неверный логин или пароль"));
-
-        var roles = await _users.GetRolesAsync(user);
-        var role  = TryResolveRole(roles);
-        if (role is null)
-            return Unauthorized(ProblemOf(401, "У пользователя должна быть роль client, master или admin."));
-
-        var token = _jwt.GenerateToken(user, role);
-        return Ok(new TokenResponse(token));
+        var response = await _authService.LoginAsync(request);
+        return Ok(response);
     }
 
+    /// <summary>Get the currently authenticated user's profile.</summary>
     [HttpGet("me")]
     [Authorize]
-    [ProducesResponseType(typeof(MeResponse), 200)]
-    [ProducesResponseType(typeof(ProblemDetails), 401)]
-    public async Task<IActionResult> Me()
+    [ProducesResponseType(typeof(MeResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<MeResponse>> Me()
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                  ?? User.FindFirst("sub")?.Value;
+        // [Authorize] guarantees a valid JWT is present; sub is always set by TokenService.
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub")
+            ?? throw new InvalidOperationException("User ID claim is missing from a validated JWT.");
 
-        if (userId is null)
-            return Unauthorized(ProblemOf(401, "Токен недействителен"));
-
-        var user = await _users.FindByIdAsync(userId);
-        if (user is null)
-            return Unauthorized(ProblemOf(401, "Пользователь не найден"));
-
-        var roles = await _users.GetRolesAsync(user);
-        var role  = TryResolveRole(roles);
-        if (role is null)
-            return Unauthorized(ProblemOf(401, "У пользователя должна быть роль client, master или admin."));
-
-        return Ok(new MeResponse(user.Id, user.Email!, user.DisplayName, role));
+        var response = await _authService.GetMeAsync(userId);
+        return Ok(response);
     }
-
-    private static string? TryResolveRole(IList<string> roles)
-    {
-        var set = new HashSet<string>(roles, StringComparer.OrdinalIgnoreCase);
-        if (set.Contains("admin")) return "admin";
-        if (set.Contains("master")) return "master";
-        if (set.Contains("client")) return "client";
-        return null;
-    }
-
-    private static ProblemDetails ProblemOf(int status, string detail) => new()
-    {
-        Status = status,
-        Title  = status switch { 401 => "Unauthorized", 403 => "Forbidden", _ => "Error" },
-        Detail = detail,
-    };
 }
-
-public record RegisterRequest(
-    [Required, MaxLength(100)] string DisplayName,
-    [Required, EmailAddress] string Email,
-    [MaxLength(32)] string? Phone,
-    [Required, MinLength(6)] string Password);
-
-public record LoginRequest(
-    [Required, EmailAddress] string Email,
-    [Required] string Password);
-
-public record TokenResponse(string AccessToken);
-
-public record MeResponse(string Id, string Email, string DisplayName, string Role);

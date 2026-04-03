@@ -12,8 +12,8 @@ using ServiceDesk.API.Data;
 namespace ServiceDesk.API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260402204613_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20260403091828_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -8,110 +9,110 @@ using ServiceDesk.API.Data;
 using ServiceDesk.API.Middleware;
 using ServiceDesk.API.Models;
 using ServiceDesk.API.Services;
-using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+// Database
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 
-builder.Services
-    .AddIdentity<ApplicationUser, IdentityRole>(opt =>
+
+// Identity
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options => 
+{
+    options.Password.RequireDigit = true;
+    options.Password.RequiredLength = 6;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequireUppercase = false;
+    options.User.RequireUniqueEmail = true;
+})
+.AddEntityFrameworkStores<AppDbContext>()
+.AddDefaultTokenProviders();
+
+// JWT Authentication
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? Environment.GetEnvironmentVariable("JWT_KEY")
+    ?? throw new InvalidOperationException("Jwt:Key is not configured.");
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        opt.Password.RequireDigit           = false;
-        opt.Password.RequiredLength         = 6;
-        opt.Password.RequireLowercase       = false;
-        opt.Password.RequireUppercase       = false;
-        opt.Password.RequireNonAlphanumeric = false;
-        opt.User.RequireUniqueEmail         = true;
-    })
-    .AddEntityFrameworkStores<AppDbContext>()
-    .AddDefaultTokenProviders();
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        RoleClaimType = "role"
+    };
 
-
-var jwtKey = builder.Configuration["Jwt:Key"]!;
-
-
-
-builder.Services
-    .AddAuthentication(opt =>
+    // Return ProblemDetails on JWT challenge (missing/invalid token) — otherwise
+    // JwtBearerHandler short-circuits the pipeline with a bodyless 401.
+    options.Events = new JwtBearerEvents
     {
-        opt.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-        opt.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
-    })
-    .AddJwtBearer(opt =>
-    {
-
-        opt.MapInboundClaims = false;
-
-        opt.TokenValidationParameters = new TokenValidationParameters
+        OnChallenge = async context =>
         {
-            ValidateIssuer           = true,
-            ValidateAudience         = true,
-            ValidateLifetime         = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer              = builder.Configuration["Jwt:Issuer"],
-            ValidAudience            = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-            RoleClaimType            = "role",
-        };
-
-        opt.Events = new JwtBearerEvents
-        {
-            OnChallenge = async ctx =>
+            context.HandleResponse();
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.ContentType = "application/problem+json";
+            var problem = new ProblemDetails
             {
-                ctx.HandleResponse();
-                ctx.Response.StatusCode  = 401;
-                ctx.Response.ContentType = "application/problem+json";
-                var problem = new { status = 401, title = "Unauthorized", detail = "Токен отсутствует или недействителен" };
-                await ctx.Response.WriteAsync(JsonSerializer.Serialize(problem));
-            },
-            OnForbidden = async ctx =>
-            {
-                ctx.Response.StatusCode  = 403;
-                ctx.Response.ContentType = "application/problem+json";
-                var problem = new { status = 403, title = "Forbidden", detail = "Недостаточно прав" };
-                await ctx.Response.WriteAsync(JsonSerializer.Serialize(problem));
-            },
-        };
-    });
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "Unauthorized",
+                Detail = "A valid Bearer token is required.",
+                Instance = context.Request.Path
+            };
+            await context.Response.WriteAsJsonAsync(problem);
+        }
+    };
+});
 
 builder.Services.AddAuthorization();
 
-builder.Services.AddScoped<JwtService>();
-builder.Services.AddControllers().AddJsonOptions(opt =>
-{
-    opt.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-    opt.JsonSerializerOptions.DictionaryKeyPolicy  = JsonNamingPolicy.CamelCase;
-});
+// Application services
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 
-builder.Services.AddCors(opt =>
-    opt.AddDefaultPolicy(p =>
-        p.WithOrigins("http://localhost:5173")
-         .AllowAnyHeader()
-         .AllowAnyMethod()));
+// Controllers
+builder.Services.AddControllers();
 
+// Swagger (Development only, configured below)
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(opt =>
+builder.Services.AddSwaggerGen(options =>
 {
-    opt.SwaggerDoc("v1", new OpenApiInfo { Title = "ServiceDesk API", Version = "v1" });
-
-    opt.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    options.SwaggerDoc("v1", new OpenApiInfo
     {
-        Name         = "Authorization",
-        Type         = SecuritySchemeType.Http,
-        Scheme       = "bearer",
-        BearerFormat = "JWT",
-        In           = ParameterLocation.Header,
-        Description  = "Введите JWT токен (без слова Bearer)",
+        Title = "ServiceDesk API",
+        Version = "v1"
     });
 
-    opt.AddSecurityRequirement(new OpenApiSecurityRequirement
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter your JWT token (without 'Bearer ' prefix)."
+    });
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
             new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
             },
             Array.Empty<string>()
         }
@@ -120,30 +121,36 @@ builder.Services.AddSwaggerGen(opt =>
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    // Roles are seeded on every startup (idempotent — required before DbInitializer runs).
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    foreach (var roleName in new[] { "client", "Operator", "Admin" })
+    {
+        if (!await roleManager.RoleExistsAsync(roleName))
+            await roleManager.CreateAsync(new IdentityRole(roleName));
+    }
+
+    if (app.Environment.IsDevelopment())
+    {
+        await DbInitializer.SeedAsync(scope.ServiceProvider);
+    }
+}
+
+// Middleware pipeline
 app.UseMiddleware<ExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(opt =>
-    {
-        opt.SwaggerEndpoint("/swagger/v1/swagger.json", "ServiceDesk API v1");
-        opt.RoutePrefix = "swagger";
-    });
+    app.UseSwaggerUI();
 }
 
-app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
 
-await using (var scope = app.Services.CreateAsyncScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
-
-    if (app.Environment.IsDevelopment())
-        await DbInitializer.SeedAsync(scope.ServiceProvider);
-}
+app.MapGet("/health", () => Results.Ok("Healthy"));
 
 app.Run();

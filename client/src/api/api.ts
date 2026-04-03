@@ -24,7 +24,6 @@ export interface User {
   role: AppRole;
 }
 
-/** Ответ /me и JWT: только client | master | admin. */
 export function mapApiRoleToApp(apiRole: string): AppRole {
   const r = apiRole.toLowerCase();
   if (r === 'admin') return 'admin';
