@@ -1,4 +1,7 @@
+using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -50,7 +53,8 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-        RoleClaimType = "role"
+        // Должно совпадать с клеймом роли в JWT (TokenService — ClaimTypes.Role).
+        RoleClaimType = ClaimTypes.Role
     };
 
     // Return ProblemDetails on JWT challenge (missing/invalid token) — otherwise
@@ -81,7 +85,12 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 // Controllers
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o =>
+    {
+        o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+        o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 // Swagger (Development only, configured below)
 builder.Services.AddEndpointsApiExplorer();
@@ -121,11 +130,14 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
+var uploadsDir = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "uploads", "tickets");
+Directory.CreateDirectory(uploadsDir);
+
 using (var scope = app.Services.CreateScope())
 {
     // Roles are seeded on every startup (idempotent — required before DbInitializer runs).
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    foreach (var roleName in new[] { "client", "Operator", "Admin" })
+    foreach (var roleName in new[] { "client", "master", "admin" })
     {
         if (!await roleManager.RoleExistsAsync(roleName))
             await roleManager.CreateAsync(new IdentityRole(roleName));
@@ -148,6 +160,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseStaticFiles();
 
 app.MapControllers();
 

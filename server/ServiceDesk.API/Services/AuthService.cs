@@ -65,7 +65,7 @@ public class AuthService : IAuthService
         }
 
         var roles = await _userManager.GetRolesAsync(user);
-        var role = roles.FirstOrDefault() ?? "client";
+        var role = TokenService.NormalizeRole(roles.FirstOrDefault() ?? "client");
 
         var token = _tokenService.GenerateToken(user, role);
         _logger.LogInformation("User {Email} logged in successfully", user.Email);
@@ -82,7 +82,7 @@ public class AuthService : IAuthService
         }
 
         var roles = await _userManager.GetRolesAsync(user);
-        var role = roles.FirstOrDefault() ?? "client";
+        var role = TokenService.NormalizeRole(roles.FirstOrDefault() ?? "client");
 
         return new MeResponse(user.Id, user.Email!, user.DisplayName, role);
     }
