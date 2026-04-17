@@ -102,7 +102,7 @@ export default function MasterDashboard() {
       <Table
         rowKey="publicNumber"
         dataSource={newRequests}
-        pagination={false}
+        pagination={{pageSize: 3}}
         columns={[
           { title: '№ заявки', dataIndex: 'publicNumber', width: 110 },
           { title: 'Клиент', dataIndex: 'clientName' },

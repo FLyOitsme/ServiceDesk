@@ -97,7 +97,7 @@ export default function ClientDashboard() {
       <Table
         rowKey="publicNumber"
         dataSource={tickets}
-        pagination={false}
+        pagination={{pageSize: 3}}
         columns={[
           {
             title: '№ заявки',
@@ -137,7 +137,6 @@ export default function ClientDashboard() {
                 <Button type="link" size="small" onClick={() => setDetailTicket(row.publicNumber)}>
                   Просмотр
                 </Button>
-                <Link to={`/tickets/${encodeURIComponent(row.publicNumber)}`}>Подробнее</Link>
               </>
             ),
           },

@@ -12,7 +12,7 @@ using ServiceDesk.API.Data;
 namespace ServiceDesk.API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260414210517_InitialCreate")]
+    [Migration("20260417082151_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

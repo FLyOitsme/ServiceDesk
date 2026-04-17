@@ -11,7 +11,6 @@ import RegisterPage from './pages/public/RegisterPage';
 import DashboardByRole from './pages/DashboardByRole';
 import TicketsByRole from './pages/TicketsByRole';
 import CreateTicket from './pages/client/CreateTicket';
-import ClientTicketDetail from './pages/client/ClientTicketDetail';
 import StockPage from './pages/master/StockPage';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminFinance from './pages/admin/AdminFinance';
@@ -39,7 +38,6 @@ export default function App() {
 
             <Route element={<RequireRole roles={['client']} />}>
               <Route path="/tickets/new" element={<CreateTicket />} />
-              <Route path="/tickets/:ticketId" element={<ClientTicketDetail />} />
             </Route>
 
             <Route path="/tickets" element={<TicketsByRole />} />

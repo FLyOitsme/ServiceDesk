@@ -85,7 +85,6 @@ export default function ClientTickets() {
                 <Button type="link" size="small" onClick={() => setDetailTicket(row.publicNumber)}>
                   Просмотр
                 </Button>
-                <Link to={`/tickets/${encodeURIComponent(row.publicNumber)}`}>Подробнее</Link>
               </>
             ),
           },

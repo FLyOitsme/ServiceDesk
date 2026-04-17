@@ -38,7 +38,7 @@ export default function CreateTicket() {
     mutationFn: (fd: FormData) => apiTicketCreate(fd),
     onSuccess: res => {
       message.success(`Заявка ${res.publicNumber} создана`);
-      navigate(`/tickets/${encodeURIComponent(res.publicNumber)}`);
+      navigate(`/tickets`);
     },
     onError: (e: Error) => message.error(e.message),
   });
@@ -109,7 +109,7 @@ export default function CreateTicket() {
                 <Input.TextArea rows={5} placeholder="Опишите проблему" />
               </Form.Item>
               <Form.Item>
-                <Button type="primary" htmlType="submit" loading={create.isPending}>
+                <Button type="primary" htmlType="submit">
                   Создать
                 </Button>
                 <Button style={{ marginLeft: 8 }} onClick={() => navigate('/tickets')}>

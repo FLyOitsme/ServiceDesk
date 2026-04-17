@@ -123,10 +123,6 @@ export default function LoginPage() {
                 Войти
               </Button>
             </Form.Item>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              Демо: master@demo.com / client@demo.com / admin@demo.com — пароли: Master123! / Client123! /
-              Admin123!
-            </Typography.Text>
           </Form>
         ) : (
           <Form layout="vertical" onFinish={onRegister}>
