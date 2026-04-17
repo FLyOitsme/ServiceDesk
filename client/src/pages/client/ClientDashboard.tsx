@@ -6,7 +6,6 @@ import {
   ToolOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { apiDashboard, type ClientDashboard as ClientDashboardData } from '../../api/api';
 import TicketDetailModal from '../../components/TicketDetailModal';

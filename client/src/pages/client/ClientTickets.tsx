@@ -2,7 +2,6 @@ import { Button, Input, Table, Typography } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { apiTickets } from '../../api/api';
 import TicketDetailModal from '../../components/TicketDetailModal';
 import PageLoading from '../../components/PageLoading';
