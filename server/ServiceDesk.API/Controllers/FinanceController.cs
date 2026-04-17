@@ -43,7 +43,7 @@ public class FinanceController : ControllerBase
         [FromQuery] DateTime? start,
         [FromQuery] DateTime? end,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10,
+        [FromQuery] int pageSize = 5,
         CancellationToken ct = default)
     {
         page = Math.Max(1, page);

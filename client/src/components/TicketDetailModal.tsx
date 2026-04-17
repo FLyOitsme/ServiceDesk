@@ -10,7 +10,6 @@ type Props = {
   title?: string;
 };
 
-/** Загрузка заявки по номеру и показ в модальном окне. */
 export default function TicketDetailModal({ open, publicNumber, onClose, title = 'Заявка' }: Props) {
   const q = useQuery({
     queryKey: ['ticket', publicNumber],

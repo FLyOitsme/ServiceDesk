@@ -135,7 +135,6 @@ Directory.CreateDirectory(uploadsDir);
 
 using (var scope = app.Services.CreateScope())
 {
-    // Roles are seeded on every startup (idempotent — required before DbInitializer runs).
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     foreach (var roleName in new[] { "client", "master", "admin" })
     {
