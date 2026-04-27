@@ -385,6 +385,44 @@ export async function apiFinanceTransactions(params: {
   return apiGet(`/api/finances/transactions?${q.toString()}`);
 }
 
+/** Подтвердить оплату по транзакции (статус Pending → Completed). */
+export async function apiFinanceCompleteTransaction(publicNumber: string): Promise<void> {
+  await apiNoContent(
+    `/api/finances/transactions/${encodeURIComponent(publicNumber)}/complete`,
+    'PATCH'
+  );
+}
+
+export interface CreatedFinanceTransaction {
+  publicNumber: string;
+  ticketNumber: string;
+  amount: number;
+  status: string;
+}
+
+/** Добавить оплату (доход) к заявке. */
+export async function apiFinanceAddPayment(body: {
+  ticketNumber: string;
+  amount: number;
+  description?: string;
+  /** Если true — статус «ожидается», иначе сразу «завершено». */
+  pending?: boolean;
+}): Promise<CreatedFinanceTransaction> {
+  const r = await fetch('/api/finances/transactions', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      ticketNumber: body.ticketNumber,
+      amount: body.amount,
+      description: body.description,
+      pending: body.pending ?? false,
+    }),
+  });
+  await handleAuthFailure(r.url, r.status);
+  if (!r.ok) throw new ApiError(await parseError(r), r.status);
+  return r.json() as Promise<CreatedFinanceTransaction>;
+}
+
 export interface InventoryRow {
   id: number;
   name: string;

@@ -203,6 +203,7 @@ export default function AdminTickets() {
         open={detailTicket != null}
         publicNumber={detailTicket}
         onClose={() => setDetailTicket(null)}
+        showAddPayment
       />
     </>
   );

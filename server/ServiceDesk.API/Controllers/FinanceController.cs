@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceDesk.API.Data;
 using ServiceDesk.API.DTOs;
+using ServiceDesk.API.Exceptions;
 using ServiceDesk.API.Models;
 
 namespace ServiceDesk.API.Controllers;
@@ -72,9 +73,109 @@ public class FinanceController : ControllerBase
 
         return Ok(new PagedResult<TransactionRowDto>(items, total, page, pageSize));
     }
+
+    /// <summary>Подтвердить оплату (ожидающая транзакция → завершена).</summary>
+    [HttpPatch("transactions/{publicNumber}/complete")]
+    public async Task<IActionResult> CompleteTransaction(string publicNumber, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(publicNumber))
+            return BadRequest();
+
+        var tx = await _db.FinancialTransactions.FirstOrDefaultAsync(x => x.PublicNumber == publicNumber.Trim(), ct);
+        if (tx is null)
+            return NotFound();
+
+        if (tx.Status == TransactionRecordStatus.Completed)
+            return NoContent();
+
+        if (tx.Status != TransactionRecordStatus.Pending)
+            throw new BusinessException("Транзакция не ожидает подтверждения оплаты.");
+
+        tx.Status = TransactionRecordStatus.Completed;
+        await _db.SaveChangesAsync(ct);
+
+        if (tx.Type == TransactionType.Income && tx.TicketId is { } tid)
+            await SyncTicketCostFromCompletedIncomeAsync(tid, ct);
+
+        return NoContent();
+    }
+
+    /// <summary>Добавить оплату (доход) к заявке.</summary>
+    [HttpPost("transactions")]
+    public async Task<ActionResult<CreatedTransactionDto>> CreatePayment([FromBody] CreatePaymentBody body, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(body.TicketNumber))
+            throw new BusinessException("Укажите номер заявки.");
+
+        if (body.Amount <= 0)
+            throw new BusinessException("Сумма должна быть больше нуля.");
+
+        var ticketKey = body.TicketNumber.Trim();
+        var ticket = int.TryParse(ticketKey, out var numericId)
+            ? await _db.Tickets.FirstOrDefaultAsync(t => t.Id == numericId, ct)
+            : await _db.Tickets.FirstOrDefaultAsync(t => t.PublicNumber == ticketKey, ct);
+
+        if (ticket is null)
+            throw new BusinessException("Заявка не найдена.");
+
+        var desc = string.IsNullOrWhiteSpace(body.Description)
+            ? $"Оплата по заявке {ticket.PublicNumber}"
+            : body.Description.Trim();
+
+        var status = body.Pending ? TransactionRecordStatus.Pending : TransactionRecordStatus.Completed;
+        var amount = decimal.Round(body.Amount, 2, MidpointRounding.AwayFromZero);
+
+        var tempKey = $"TMP-{Guid.NewGuid():N}";
+        var tx = new FinancialTransaction
+        {
+            PublicNumber = tempKey,
+            TicketId = ticket.Id,
+            Description = desc,
+            Type = TransactionType.Income,
+            Amount = amount,
+            DateUtc = DateTime.UtcNow,
+            Status = status
+        };
+
+        _db.FinancialTransactions.Add(tx);
+        await _db.SaveChangesAsync(ct);
+
+        tx.PublicNumber = $"TRX-{tx.Id:D3}";
+        await _db.SaveChangesAsync(ct);
+
+        await SyncTicketCostFromCompletedIncomeAsync(ticket.Id, ct);
+
+        var dto = new CreatedTransactionDto(tx.PublicNumber, ticket.PublicNumber, amount, tx.Status.ToString());
+        return Created($"/api/finances/transactions/{Uri.EscapeDataString(tx.PublicNumber)}", dto);
+    }
+
+    /// <summary>Стоимость заявки = сумма завершённых поступлений по ней.</summary>
+    private async Task SyncTicketCostFromCompletedIncomeAsync(int ticketId, CancellationToken ct)
+    {
+        var sum = await _db.FinancialTransactions
+            .Where(f =>
+                f.TicketId == ticketId
+                && f.Type == TransactionType.Income
+                && f.Status == TransactionRecordStatus.Completed)
+            .SumAsync(f => f.Amount, ct);
+
+        if (sum <= 0m)
+            return;
+
+        var t = await _db.Tickets.FirstOrDefaultAsync(x => x.Id == ticketId, ct);
+        if (t is null)
+            return;
+
+        t.Cost = sum;
+        await _db.SaveChangesAsync(ct);
+    }
 }
 
 public record FinanceSummaryDto(decimal Income, decimal Expense, decimal Profit);
+
+public record CreatePaymentBody(string TicketNumber, decimal Amount, string? Description = null, bool Pending = false);
+
+public record CreatedTransactionDto(string PublicNumber, string TicketNumber, decimal Amount, string Status);
 
 public record TransactionRowDto(
     string PublicNumber,

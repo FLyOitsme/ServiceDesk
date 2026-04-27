@@ -1,8 +1,14 @@
-import { Button, Card, Col, DatePicker, Descriptions, Modal, Row, Table, Tag, Typography } from 'antd';
-import { useQuery } from '@tanstack/react-query';
+import { Button, Card, Col, DatePicker, Descriptions, Modal, Row, Table, Tag, Typography, message } from 'antd';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
-import { apiFinanceSummary, apiFinanceTransactions, type TransactionRow } from '../../api/api';
+import {
+  apiFinanceCompleteTransaction,
+  apiFinanceSummary,
+  apiFinanceTransactions,
+  type TransactionRow,
+} from '../../api/api';
+import AddPaymentModal from '../../components/AddPaymentModal';
 import PageLoading from '../../components/PageLoading';
 import PageError from '../../components/PageError';
 import { formatRuDate } from '../../lib/format';
@@ -11,8 +17,10 @@ import { txStatusLabel, txTypeLabel } from '../../lib/ticketLabels';
 const { RangePicker } = DatePicker;
 
 export default function AdminFinance() {
+  const qc = useQueryClient();
   const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [txDetail, setTxDetail] = useState<TransactionRow | null>(null);
+  const [addPaymentOpen, setAddPaymentOpen] = useState(false);
 
   const startIso = range ? range[0].startOf('day').toISOString() : undefined;
   const endIso = range ? range[1].startOf('day').toISOString() : undefined;
@@ -32,6 +40,19 @@ export default function AdminFinance() {
         start: startIso,
         end: endIso,
       }),
+  });
+
+  const completePay = useMutation({
+    mutationFn: (publicNumber: string) => apiFinanceCompleteTransaction(publicNumber),
+    onSuccess: async (_, publicNumber) => {
+      message.success('Оплата подтверждена');
+      setTxDetail(prev => (prev?.publicNumber === publicNumber ? { ...prev, status: 'Completed' } : prev));
+      await qc.invalidateQueries({ queryKey: ['finance'] });
+      await qc.invalidateQueries({ queryKey: ['dashboard'] });
+      await qc.invalidateQueries({ queryKey: ['tickets'] });
+      await qc.invalidateQueries({ queryKey: ['ticket'] });
+    },
+    onError: (e: Error) => message.error(e.message),
   });
 
   const amountCell = useMemo(
@@ -62,6 +83,10 @@ export default function AdminFinance() {
         <Typography.Title level={3} style={{ margin: 0 }}>
           Все заявки
         </Typography.Title>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+          <Button type="primary" onClick={() => setAddPaymentOpen(true)}>
+            Добавить оплату к заявке
+          </Button>
         <RangePicker
           value={range ?? undefined}
           onChange={dates => {
@@ -71,6 +96,7 @@ export default function AdminFinance() {
           }}
           format="DD.MM.YYYY"
         />
+        </div>
       </div>
 
       <Row gutter={[16, 16]} style={{ marginTop: 24, marginBottom: 24 }}>
@@ -149,21 +175,48 @@ export default function AdminFinance() {
             },
             {
               title: '',
-              width: 100,
+              width: 220,
               render: (_, row) => (
-                <Button type="link" size="small" onClick={() => setTxDetail(row)}>
-                  Просмотр
-                </Button>
+                <>
+                  <Button type="link" size="small" onClick={() => setTxDetail(row)}>
+                    Просмотр
+                  </Button>
+                  {row.status === 'Pending' ? (
+                    <Button
+                      type="link"
+                      size="small"
+                      loading={completePay.isPending && completePay.variables === row.publicNumber}
+                      onClick={() => completePay.mutate(row.publicNumber)}
+                    >
+                      Подтвердить оплату
+                    </Button>
+                  ) : null}
+                </>
               ),
             },
           ]}
         />
 
+      <AddPaymentModal open={addPaymentOpen} onClose={() => setAddPaymentOpen(false)} />
+
       <Modal
         title={txDetail ? `Транзакция ${txDetail.publicNumber}` : 'Транзакция'}
         open={txDetail != null}
         onCancel={() => setTxDetail(null)}
-        footer={<Button onClick={() => setTxDetail(null)}>Закрыть</Button>}
+        footer={
+          <>
+            {txDetail?.status === 'Pending' ? (
+              <Button
+                type="primary"
+                loading={completePay.isPending && completePay.variables === txDetail.publicNumber}
+                onClick={() => txDetail && completePay.mutate(txDetail.publicNumber)}
+              >
+                Подтвердить оплату
+              </Button>
+            ) : null}
+            <Button onClick={() => setTxDetail(null)}>Закрыть</Button>
+          </>
+        }
         width={560}
       >
         {txDetail && (
